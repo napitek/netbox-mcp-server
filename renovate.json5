@@ -6,6 +6,9 @@
 
   labels: ['dependencies'],
 
+  // Bump lower bounds in pyproject.toml even when the constraint already allows the new version
+  rangeStrategy: 'bump',
+
   packageRules: [
     // Python
     {
