@@ -13,6 +13,7 @@
     // Don't bump requires-python — it defines minimum supported version, not installed version
     {
       matchDepNames: ['python'],
+      matchManagers: ['pep621'],
       enabled: false,
     },
 
