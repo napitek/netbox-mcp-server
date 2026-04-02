@@ -10,6 +10,12 @@
   rangeStrategy: 'bump',
 
   packageRules: [
+    // Don't bump requires-python — it defines minimum supported version, not installed version
+    {
+      matchDepNames: ['python'],
+      enabled: false,
+    },
+
     // Python
     {
       description: 'Group non-major Python dependency updates',
