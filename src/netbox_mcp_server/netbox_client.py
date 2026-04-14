@@ -142,7 +142,8 @@ class NetBoxRestClient(NetBoxClientBase):
     # client = NetBoxRestClient(
     #     url="https://netbox.example.com",
     #     token="your_api_token_here",
-    #     verify_ssl=True
+    #     verify_ssl=True,
+    #     enable_writes=True,
     # )
 
     # # Get all sites
@@ -161,7 +162,13 @@ class NetBoxRestClient(NetBoxClientBase):
     # })
     # print(f"Created site: {new_site.get('name')} (ID: {new_site.get('id')})")
 
-    def __init__(self, url: str, token: str, verify_ssl: bool = True):
+    def __init__(
+        self,
+        url: str,
+        token: str,
+        verify_ssl: bool = True,
+        enable_writes: bool = False,
+    ):
         """
         Initialize the REST API client.
 
@@ -169,11 +176,13 @@ class NetBoxRestClient(NetBoxClientBase):
             url: The base URL of the NetBox instance (e.g., 'https://netbox.example.com')
             token: API token for authentication
             verify_ssl: Whether to verify SSL certificates
+            enable_writes: Whether to allow write operations through this client
         """
         self.base_url = url.rstrip("/")
         self.api_url = f"{self.base_url}/api"
         self.token = token
         self.verify_ssl = verify_ssl
+        self.enable_writes = enable_writes
         auth_scheme = "Bearer" if token.startswith("nbt_") else "Token"
         self.session = httpx.Client(verify=self.verify_ssl)
         self.session.headers.update(
@@ -190,6 +199,14 @@ class NetBoxRestClient(NetBoxClientBase):
         if id is not None:
             return f"{self.api_url}/{endpoint}/{id}/"
         return f"{self.api_url}/{endpoint}/"
+
+    def _ensure_writes_enabled(self) -> None:
+        """Raise if this client instance is not allowed to perform write operations."""
+        if not self.enable_writes:
+            raise PermissionError(
+                "NetBox write operations are disabled for this client. Initialize "
+                "NetBoxRestClient with enable_writes=True to allow writes."
+            )
 
     def get(
         self,
@@ -245,6 +262,7 @@ class NetBoxRestClient(NetBoxClientBase):
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
+        self._ensure_writes_enabled()
         url = self._build_url(endpoint)
         response = self.session.post(url, json=data)
         response.raise_for_status()
@@ -265,6 +283,7 @@ class NetBoxRestClient(NetBoxClientBase):
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
+        self._ensure_writes_enabled()
         url = self._build_url(endpoint, id)
         response = self.session.patch(url, json=data)
         response.raise_for_status()
@@ -284,6 +303,7 @@ class NetBoxRestClient(NetBoxClientBase):
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
+        self._ensure_writes_enabled()
         url = self._build_url(endpoint, id)
         response = self.session.delete(url)
         response.raise_for_status()
@@ -303,6 +323,7 @@ class NetBoxRestClient(NetBoxClientBase):
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
+        self._ensure_writes_enabled()
         url = self._build_url(endpoint)
         response = self.session.post(url, json=data)
         response.raise_for_status()
@@ -322,6 +343,7 @@ class NetBoxRestClient(NetBoxClientBase):
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
+        self._ensure_writes_enabled()
         url = self._build_url(endpoint)
         response = self.session.patch(url, json=data)
         response.raise_for_status()
@@ -341,6 +363,7 @@ class NetBoxRestClient(NetBoxClientBase):
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
+        self._ensure_writes_enabled()
         url = self._build_url(endpoint)
         data = [{"id": object_id} for object_id in ids]
         response = self.session.request("DELETE", url, json=data)

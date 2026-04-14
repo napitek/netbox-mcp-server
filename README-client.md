@@ -2,6 +2,8 @@
 
 A Python client library for interacting with NetBox, providing both a base abstract class and a REST API implementation.
 
+Write operations are disabled by default and must be explicitly enabled on the client.
+
 ## Features
 
 - Abstract base class with generic CRUD methods
@@ -24,9 +26,9 @@ pip install -e .
 ### REST API Client
 
 ```python
-from client import NetBoxRestClient
+from netbox_mcp_server.netbox_client import NetBoxRestClient
 
-# Initialize the client
+# Initialize the client in read-only mode
 client = NetBoxRestClient(
     url="https://netbox.example.com",
     token="your_api_token_here",
@@ -59,8 +61,16 @@ while True:
         
     page += 1
 
+# Enable writes only when you need create, update, or delete operations
+write_client = NetBoxRestClient(
+    url="https://netbox.example.com",
+    token="your_api_token_here",
+    verify_ssl=True,
+    enable_writes=True
+)
+
 # Create a new site
-new_site = client.create("dcim/sites", {
+new_site = write_client.create("dcim/sites", {
     "name": "New Site",
     "slug": "new-site",
     "status": "active"
@@ -68,27 +78,27 @@ new_site = client.create("dcim/sites", {
 print(f"Created site: {new_site.get('name')} (ID: {new_site.get('id')})")
 
 # Update a site
-updated_site = client.update("dcim/sites", id=1, data={
+updated_site = write_client.update("dcim/sites", id=1, data={
     "description": "Updated description"
 })
 
 # Delete a site
-success = client.delete("dcim/sites", id=1)
+success = write_client.delete("dcim/sites", id=1)
 if success:
     print("Site deleted successfully")
 
 # Bulk operations
-new_sites = client.bulk_create("dcim/sites", [
+new_sites = write_client.bulk_create("dcim/sites", [
     {"name": "Site 1", "slug": "site-1", "status": "active"},
     {"name": "Site 2", "slug": "site-2", "status": "active"}
 ])
 
-updated_sites = client.bulk_update("dcim/sites", [
+updated_sites = write_client.bulk_update("dcim/sites", [
     {"id": 1, "description": "Updated description 1"},
     {"id": 2, "description": "Updated description 2"}
 ])
 
-success = client.bulk_delete("dcim/sites", ids=[1, 2])
+success = write_client.bulk_delete("dcim/sites", ids=[1, 2])
 ```
 
 ## Extending for ORM Implementation
@@ -96,7 +106,7 @@ success = client.bulk_delete("dcim/sites", ids=[1, 2])
 The `NetBoxClientBase` abstract base class can be extended to create an ORM-based implementation for use within a NetBox plugin:
 
 ```python
-from client import NetBoxClientBase
+from netbox_mcp_server.netbox_client import NetBoxClientBase
 from django.db import transaction
 
 class NetBoxOrmClient(NetBoxClientBase):
