@@ -9,6 +9,10 @@ from pydantic import Field
 from netbox_mcp_server.config import Settings, configure_logging
 from netbox_mcp_server.netbox_client import NetBoxRestClient
 from netbox_mcp_server.netbox_types import NETBOX_OBJECT_TYPES
+from netbox_mcp_server.netbox_write_schemas import (
+    get_write_requirements,
+    validate_create_payload,
+)
 
 
 def parse_cli_args() -> dict[str, Any]:
@@ -415,6 +419,24 @@ def netbox_get_object_by_id(
 
 
 @mcp.tool
+def netbox_get_write_requirements(object_type: str) -> dict[str, Any]:
+    """
+    Get curated create-payload guidance for a NetBox object type.
+
+    Args:
+        object_type: String representing the NetBox object type (e.g. "ipam.ipaddress")
+
+    Returns:
+        Dictionary with schema availability, MCP-required fields, recommended fields,
+        optional fields, an example payload, and notes. These requirements are curated
+        by this MCP server to guide LLM-driven create operations and may be stricter
+        or smaller than NetBox's full API schema.
+    """
+    _validate_object_type(object_type)
+    return get_write_requirements(object_type)
+
+
+@mcp.tool
 def netbox_create_object(object_type: str, data: dict[str, Any]) -> dict[str, Any]:
     """
     Create a NetBox object.
@@ -433,6 +455,7 @@ def netbox_create_object(object_type: str, data: dict[str, Any]) -> dict[str, An
     """
     _ensure_writes_enabled()
     _validate_object_type(object_type)
+    validate_create_payload(object_type, data)
 
     endpoint, _fallback = _get_endpoint_info(object_type)
     return netbox.create(endpoint, data=data)
@@ -524,6 +547,8 @@ def netbox_bulk_create_objects(
     _ensure_writes_enabled()
     _validate_object_type(object_type)
     _validate_bulk_payload(data)
+    for index, item in enumerate(data):
+        validate_create_payload(object_type, item, index=index)
 
     endpoint, _fallback = _get_endpoint_info(object_type)
     return netbox.bulk_create(endpoint, data=data)

@@ -17,6 +17,7 @@ This is a [Model Context Protocol](https://modelcontextprotocol.io/) server for 
 | `netbox_get_object_by_id` | Gets detailed information about a specific NetBox object by its ID |
 | `netbox_get_changelogs` | Retrieves change history records (audit trail) based on filters |
 | `netbox_search_objects` | Searches common NetBox object types |
+| `netbox_get_write_requirements` | Returns curated create-payload guidance for an object type |
 | `netbox_create_object` | Creates one NetBox object (requires `ENABLE_WRITES=true`) |
 | `netbox_update_object` | Updates one NetBox object with `PATCH` (requires `ENABLE_WRITES=true`) |
 | `netbox_delete_object` | Deletes one NetBox object with `confirm=true` (requires `ENABLE_WRITES=true`) |
@@ -176,7 +177,43 @@ netbox_delete_object("dcim.site", 123, confirm=True)
 netbox_bulk_delete_objects("dcim.site", [123, 124], confirm=True)
 ```
 
-Create and update payloads are passed directly to NetBox's REST API. Related objects may be specified by numeric ID or by unique identifying attributes supported by NetBox. Add `changelog_message` to create/update payloads to record an audit message.
+Create and update payloads are passed directly to NetBox's REST API. Related objects may be
+specified by numeric ID or by unique identifying attributes supported by NetBox. Add
+`changelog_message` to create or update payloads to record an audit message.
+
+Use `netbox_get_write_requirements()` before creating common object types to get the fields this MCP server expects:
+
+```python
+netbox_get_write_requirements("ipam.ipaddress")
+```
+
+Example response:
+
+```json
+{
+  "object_type": "ipam.ipaddress",
+  "schema_available": true,
+  "required_fields": ["address"],
+  "recommended_fields": ["status", "description"],
+  "optional_fields": [
+    "vrf",
+    "tenant",
+    "dns_name",
+    "assigned_object_type",
+    "assigned_object_id",
+    "tags"
+  ],
+  "example": {
+    "address": "192.0.2.10/24",
+    "status": "active",
+    "description": "Created by MCP"
+  }
+}
+```
+
+For object types with curated requirements, `netbox_create_object()` and
+`netbox_bulk_create_objects()` validate required fields before sending the request to NetBox.
+Object types without a curated schema still rely on NetBox API validation.
 
 ## Configuration
 

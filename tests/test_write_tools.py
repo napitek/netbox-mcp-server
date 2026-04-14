@@ -10,6 +10,7 @@ from netbox_mcp_server.server import (
     netbox_bulk_update_objects,
     netbox_create_object,
     netbox_delete_object,
+    netbox_get_write_requirements,
     netbox_update_object,
 )
 
@@ -18,6 +19,37 @@ def test_create_requires_writes_enabled():
     """Create operations should be blocked when writes are disabled."""
     with pytest.raises(PermissionError, match="write operations are disabled"):
         netbox_create_object("dcim.site", {"name": "Site A", "slug": "site-a"})
+
+
+def test_get_write_requirements_returns_curated_schema():
+    """Write requirements should guide create payload collection."""
+    result = netbox_get_write_requirements("ipam.ipaddress")
+
+    assert result["object_type"] == "ipam.ipaddress"
+    assert result["schema_available"] is True
+    assert result["required_fields"] == ["address"]
+    assert result["example"]["address"] == "192.0.2.10/24"
+
+
+def test_get_write_requirements_returns_missing_schema_response():
+    """Object types without a curated schema should return a clear response."""
+    result = netbox_get_write_requirements("core.objectchange")
+
+    assert result["object_type"] == "core.objectchange"
+    assert result["schema_available"] is False
+    assert result["required_fields"] == []
+
+
+@patch("netbox_mcp_server.server.netbox")
+def test_create_rejects_missing_curated_required_fields(mock_netbox):
+    """Create should fail before the API call when a curated required field is missing."""
+    with (
+        patch("netbox_mcp_server.server.enable_writes", True),
+        pytest.raises(ValueError, match="address"),
+    ):
+        netbox_create_object("ipam.ipaddress", {"status": "active"})
+
+    mock_netbox.create.assert_not_called()
 
 
 @patch("netbox_mcp_server.server.netbox")
@@ -92,6 +124,20 @@ def test_bulk_create_objects_calls_client(mock_netbox):
 
     assert result == [{"id": 1, "name": "Site A"}]
     mock_netbox.bulk_create.assert_called_once_with("dcim/sites", data=payload)
+
+
+@patch("netbox_mcp_server.server.netbox")
+def test_bulk_create_rejects_missing_curated_required_fields(mock_netbox):
+    """Bulk create should identify the failing item when curated required fields are missing."""
+    payload = [{"address": "192.0.2.10/24"}, {"status": "active"}]
+
+    with (
+        patch("netbox_mcp_server.server.enable_writes", True),
+        pytest.raises(ValueError, match="bulk item 1"),
+    ):
+        netbox_bulk_create_objects("ipam.ipaddress", payload)
+
+    mock_netbox.bulk_create.assert_not_called()
 
 
 @patch("netbox_mcp_server.server.netbox")

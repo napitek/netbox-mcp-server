@@ -136,6 +136,7 @@ def get_stuff(t, f):
 - **Read-only by default**: Create/update/delete tools must remain gated by `ENABLE_WRITES`
 - **Environment-based config**: All secrets via environment variables, never hardcoded
 - **Explicit object mapping**: `NETBOX_OBJECT_TYPES` dictionary maintains allowed types
+- **Curated write guidance**: `NETBOX_WRITE_SCHEMAS` defines MCP-side create requirements for common object types
 
 ## Tool Development Guidelines
 
@@ -151,6 +152,7 @@ def get_stuff(t, f):
 - Use `netbox_` prefix for all tools (e.g., `netbox_get_objects`)
 - Use descriptive action verbs: `get`, `list`, `search`
 - Keep names intuitive for LLM consumption
+- Use `netbox_get_write_requirements` to guide create payload collection before write tools
 
 ### Supported NetBox Objects
 
