@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     verify_ssl: bool = True
     """Whether to verify SSL certificates when connecting to NetBox"""
 
+    enable_writes: bool = False
+    """Whether to allow create, update, and delete operations against NetBox"""
+
     # ===== Observability Settings =====
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     """Logging verbosity level"""
@@ -90,6 +93,7 @@ class Settings(BaseSettings):
             "host": self.host if self.transport == "http" else "N/A",
             "port": self.port if self.transport == "http" else "N/A",
             "verify_ssl": self.verify_ssl,
+            "enable_writes": self.enable_writes,
             "log_level": self.log_level,
         }
 

@@ -1,4 +1,4 @@
-"""NetBox MCP Server - Read-only MCP server for NetBox infrastructure data."""
+"""NetBox MCP Server for NetBox infrastructure data."""
 
 __version__ = "1.0.0"  # Auto-managed by semantic-release
 

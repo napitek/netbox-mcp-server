@@ -2,7 +2,7 @@
 
 ## Core Concept
 
-A read-only [Model Context Protocol](https://modelcontextprotocol.io/) server that enables LLMs to interact with NetBox infrastructure data. Built with FastMCP and designed for use by NetBox operators.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that enables LLMs to interact with NetBox infrastructure data. It is read-only by default, with opt-in write tools guarded by `ENABLE_WRITES`.
 
 **Your role**: Help contributors design and implement features following open-source best practices. Ask clarifying questions and challenge assumptions when needed.
 
@@ -42,8 +42,11 @@ A read-only [Model Context Protocol](https://modelcontextprotocol.io/) server th
 # Install dependencies (ONLY use uv, NEVER pip)
 uv sync
 
-# Run the server locally (requires env vars)
+# Run the server locally in read-only mode (requires env vars)
 NETBOX_URL=https://netbox.example.com/ NETBOX_TOKEN=<token> uv run netbox-mcp-server
+
+# Run the server with write tools enabled
+NETBOX_URL=https://netbox.example.com/ NETBOX_TOKEN=<token> ENABLE_WRITES=true uv run netbox-mcp-server
 
 # Alternative: module execution
 uv run -m netbox_mcp_server
@@ -130,7 +133,7 @@ def get_stuff(t, f):
 ### Architecture Patterns
 
 - **Abstraction layer**: `NetBoxClientBase` defines interface for future ORM implementation
-- **Read-only by design**: Only GET operations exposed; no create/update/delete tools
+- **Read-only by default**: Create/update/delete tools must remain gated by `ENABLE_WRITES`
 - **Environment-based config**: All secrets via environment variables, never hardcoded
 - **Explicit object mapping**: `NETBOX_OBJECT_TYPES` dictionary maintains allowed types
 
@@ -167,12 +170,14 @@ See `NETBOX_OBJECT_TYPES` in `server.py` for complete list.
 ## Environment Variables
 
 - `NETBOX_URL`: Base URL of NetBox instance (e.g., `https://netbox.example.com/`)
-- `NETBOX_TOKEN`: Read-only API token with appropriate permissions
+- `NETBOX_TOKEN`: API token with appropriate permissions; use read-only tokens unless write tools are enabled
+- `ENABLE_WRITES`: Enables create/update/delete tools when set to `true` (default: `false`)
 - `LOG_LEVEL`: Logging verbosity (default: `INFO`, options: `DEBUG`, `WARNING`, `ERROR`)
 
 ## Security Considerations
 
-- **Read-only tokens**: Always use read-only API tokens with minimal required permissions
+- **Least-privilege tokens**: Always use tokens with the minimum required permissions; prefer read-only tokens unless write tools are explicitly needed
+- **Write gate**: Write tools must remain disabled by default and delete tools must require explicit confirmation
 - **No credential storage**: Tokens passed via environment, never stored or logged
 - **SSL verification**: Enabled by default in REST client
 - **No plugin support**: Deliberately excludes plugin object types to limit attack surface
@@ -180,12 +185,13 @@ See `NETBOX_OBJECT_TYPES` in `server.py` for complete list.
 
 ## Testing Philosophy
 
-Currently no automated test suite. When adding tests:
+This project has an automated pytest suite. When adding tests:
 
 - Test tool behavior with real NetBox instance (Docker-based test environment)
 - Mock external NetBox API calls only when necessary
 - Validate error handling (invalid object types, missing credentials, API errors)
 - Test pagination handling for large result sets
+- Test write gating and destructive-operation confirmation when changing write behavior
 
 ## Do Not
 
@@ -197,7 +203,7 @@ Currently no automated test suite. When adding tests:
 
 ### Code Quality
 
-- ❌ Add write operations (create/update/delete) without explicit project maintainer approval
+- ❌ Add new write behavior without keeping `ENABLE_WRITES` gating and delete confirmation
 - ❌ Add support for plugin object types (scope limited to core NetBox)
 - ❌ Hardcode credentials or NetBox URLs
 - ❌ Bypass the `NetBoxClientBase` abstraction
@@ -296,13 +302,13 @@ Currently no automated test suite. When adding tests:
 
 - Exposes core NetBox functionality not currently accessible
 - Has clear use case for LLM-driven queries
-- Maintains read-only contract
+- Maintains read-only-by-default behavior, or is explicitly gated when it writes
 - Follows existing tool patterns
 
 ❌ **Don't add if**:
 
 - Duplicates existing tool functionality
-- Requires write operations
+- Requires ungated write operations
 - Only benefits niche use cases
 - Adds complexity without clear value
 
@@ -365,7 +371,10 @@ mcp_tool("netbox_get_changelogs", {
 
 **"Authentication failed"**
 → Verify API token is valid and not expired
-→ Ensure token has read permissions for requested objects
+→ Ensure token has read permissions for requested objects, plus write permissions when using write tools
+
+**"NetBox write operations are disabled"**
+→ Set `ENABLE_WRITES=true` or pass `--enable-writes` if write tools should be available
 
 ## References
 

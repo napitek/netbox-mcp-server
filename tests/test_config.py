@@ -60,6 +60,15 @@ def test_settings_masks_secrets_in_summary():
     assert "super-secret-token" not in str(summary)
 
 
+def test_writes_disabled_by_default():
+    """Write operations should be disabled by default."""
+
+    settings = Settings(netbox_url="https://netbox.example.com/", netbox_token="test-token")
+
+    assert settings.enable_writes is False
+    assert settings.get_effective_config_summary()["enable_writes"] is False
+
+
 # ===== CLI Argument Parsing Tests =====
 
 
@@ -86,6 +95,30 @@ def test_parse_cli_args_multiple():
         assert result["port"] == 9000
         assert result["log_level"] == "DEBUG"
         assert result["verify_ssl"] is False
+    finally:
+        sys.argv = original_argv
+
+
+def test_parse_cli_args_enable_writes():
+    """Test that --enable-writes is captured."""
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ["server.py", "--enable-writes"]
+        result = parse_cli_args()
+        assert result["enable_writes"] is True
+    finally:
+        sys.argv = original_argv
+
+
+def test_parse_cli_args_disable_writes():
+    """Test that --disable-writes is captured."""
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ["server.py", "--disable-writes"]
+        result = parse_cli_args()
+        assert result["enable_writes"] is False
     finally:
         sys.argv = original_argv
 

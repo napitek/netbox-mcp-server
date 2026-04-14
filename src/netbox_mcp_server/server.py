@@ -69,6 +69,22 @@ def parse_cli_args() -> dict[str, Any]:
         help="Disable SSL certificate verification (not recommended)",
     )
 
+    # Write-operation settings
+    write_group = parser.add_mutually_exclusive_group()
+    write_group.add_argument(
+        "--enable-writes",
+        action="store_true",
+        dest="enable_writes",
+        default=None,
+        help="Enable NetBox create, update, and delete tools (default: disabled)",
+    )
+    write_group.add_argument(
+        "--disable-writes",
+        action="store_false",
+        dest="enable_writes",
+        help="Disable NetBox create, update, and delete tools",
+    )
+
     # Observability settings
     parser.add_argument(
         "--log-level",
@@ -92,6 +108,8 @@ def parse_cli_args() -> dict[str, Any]:
         overlay["port"] = args.port
     if args.verify_ssl is not None:
         overlay["verify_ssl"] = args.verify_ssl
+    if args.enable_writes is not None:
+        overlay["enable_writes"] = args.enable_writes
     if args.log_level is not None:
         overlay["log_level"] = args.log_level
 
@@ -112,6 +130,7 @@ DEFAULT_SEARCH_TYPES = [
 
 mcp = FastMCP("NetBox")
 netbox = None
+enable_writes = False
 
 
 def validate_filters(filters: dict) -> None:
@@ -172,6 +191,56 @@ def validate_filters(filters: dict) -> None:
                 f"traversal or invalid lookup suffix not supported. Use direct field filters like "
                 f"'site_id' or two-step queries."
             )
+
+
+def _ensure_writes_enabled() -> None:
+    """Raise if NetBox write operations are disabled."""
+    if not enable_writes:
+        raise PermissionError(
+            "NetBox write operations are disabled. Set ENABLE_WRITES=true or pass "
+            "--enable-writes to allow create, update, and delete tools."
+        )
+
+
+def _validate_object_type(object_type: str) -> None:
+    """Validate that the object type exists in the supported mapping."""
+    if object_type not in NETBOX_OBJECT_TYPES:
+        valid_types = "\n".join(f"- {t}" for t in sorted(NETBOX_OBJECT_TYPES.keys()))
+        raise ValueError(f"Invalid object_type. Must be one of:\n{valid_types}")
+
+
+def _validate_object_id(object_id: int) -> None:
+    """Validate that an object ID is a positive integer."""
+    if not isinstance(object_id, int) or isinstance(object_id, bool) or object_id < 1:
+        raise ValueError("object_id must be a positive integer")
+
+
+def _validate_bulk_payload(data: list[dict[str, Any]]) -> None:
+    """Validate that a bulk payload has at least one object."""
+    if not data:
+        raise ValueError("Bulk payload must include at least one object")
+
+
+def _validate_bulk_update_payload(data: list[dict[str, Any]]) -> None:
+    """Validate that every bulk update object includes a positive integer ID."""
+    _validate_bulk_payload(data)
+    for item in data:
+        object_id = item.get("id")
+        if not isinstance(object_id, int) or isinstance(object_id, bool) or object_id < 1:
+            raise ValueError("Each bulk update object must include a positive integer 'id'")
+
+
+def _validate_bulk_delete_ids(object_ids: list[int]) -> None:
+    """Validate that a bulk delete request has at least one positive integer ID."""
+    if not object_ids:
+        raise ValueError("object_ids must include at least one object ID")
+    invalid_ids = [
+        object_id
+        for object_id in object_ids
+        if not isinstance(object_id, int) or isinstance(object_id, bool) or object_id < 1
+    ]
+    if invalid_ids:
+        raise ValueError("object_ids must contain only positive integers")
 
 
 @mcp.tool(
@@ -264,9 +333,7 @@ def netbox_get_objects(
     Get objects from NetBox based on their type and filters
     """
     # Validate object_type exists in mapping
-    if object_type not in NETBOX_OBJECT_TYPES:
-        valid_types = "\n".join(f"- {t}" for t in sorted(NETBOX_OBJECT_TYPES.keys()))
-        raise ValueError(f"Invalid object_type. Must be one of:\n{valid_types}")
+    _validate_object_type(object_type)
 
     # Validate filter patterns
     validate_filters(filters)
@@ -329,9 +396,8 @@ def netbox_get_object_by_id(
         Object dict (complete or with only requested fields based on fields parameter)
     """
     # Validate object_type exists in mapping
-    if object_type not in NETBOX_OBJECT_TYPES:
-        valid_types = "\n".join(f"- {t}" for t in sorted(NETBOX_OBJECT_TYPES.keys()))
-        raise ValueError(f"Invalid object_type. Must be one of:\n{valid_types}")
+    _validate_object_type(object_type)
+    _validate_object_id(object_id)
 
     # Get API endpoint and fallback from mapping
     endpoint, fallback = _get_endpoint_info(object_type)
@@ -346,6 +412,186 @@ def netbox_get_object_by_id(
         params["brief"] = "1"
 
     return netbox.get(full_endpoint, params=params, fallback_endpoint=full_fallback)
+
+
+@mcp.tool
+def netbox_create_object(object_type: str, data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Create a NetBox object.
+
+    Write operations are disabled by default. Start the server with ENABLE_WRITES=true
+    or --enable-writes to allow this tool to run.
+
+    Args:
+        object_type: String representing the NetBox object type (e.g. "dcim.site")
+        data: Object fields to send as the JSON request body. Related objects may be
+              specified by numeric ID or by unique identifying attributes supported by NetBox.
+              Add changelog_message to record an audit message for the change.
+
+    Returns:
+        The created object as returned by NetBox.
+    """
+    _ensure_writes_enabled()
+    _validate_object_type(object_type)
+
+    endpoint, _fallback = _get_endpoint_info(object_type)
+    return netbox.create(endpoint, data=data)
+
+
+@mcp.tool
+def netbox_update_object(
+    object_type: str,
+    object_id: int,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Partially update a NetBox object using PATCH.
+
+    Write operations are disabled by default. Start the server with ENABLE_WRITES=true
+    or --enable-writes to allow this tool to run.
+
+    Args:
+        object_type: String representing the NetBox object type (e.g. "dcim.device")
+        object_id: Numeric NetBox object ID to update
+        data: Fields to update as the JSON request body. Add changelog_message to record
+              an audit message for the change.
+
+    Returns:
+        The updated object as returned by NetBox.
+    """
+    _ensure_writes_enabled()
+    _validate_object_type(object_type)
+    _validate_object_id(object_id)
+
+    if "id" in data and data["id"] != object_id:
+        raise ValueError("data['id'] must match object_id when provided")
+
+    endpoint, _fallback = _get_endpoint_info(object_type)
+    return netbox.update(endpoint, id=object_id, data=data)
+
+
+@mcp.tool
+def netbox_delete_object(
+    object_type: str,
+    object_id: int,
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """
+    Delete a NetBox object.
+
+    Write operations are disabled by default. Start the server with ENABLE_WRITES=true
+    or --enable-writes to allow this tool to run. This tool also requires confirm=True.
+
+    Args:
+        object_type: String representing the NetBox object type (e.g. "ipam.prefix")
+        object_id: Numeric NetBox object ID to delete
+        confirm: Must be true to perform the deletion
+
+    Returns:
+        A structured deletion result.
+    """
+    _ensure_writes_enabled()
+    _validate_object_type(object_type)
+    _validate_object_id(object_id)
+
+    if not confirm:
+        raise ValueError("Deleting an object requires confirm=True")
+
+    endpoint, _fallback = _get_endpoint_info(object_type)
+    deleted = netbox.delete(endpoint, id=object_id)
+    return {"deleted": deleted, "object_type": object_type, "object_id": object_id}
+
+
+@mcp.tool
+def netbox_bulk_create_objects(
+    object_type: str,
+    data: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Create multiple NetBox objects of the same type in one request.
+
+    Write operations are disabled by default. Start the server with ENABLE_WRITES=true
+    or --enable-writes to allow this tool to run. NetBox bulk operations are all-or-none.
+
+    Args:
+        object_type: String representing the NetBox object type (e.g. "dcim.site")
+        data: List of object fields to send as the JSON request body. Add
+              changelog_message to each object where an audit message is desired.
+
+    Returns:
+        The created objects as returned by NetBox.
+    """
+    _ensure_writes_enabled()
+    _validate_object_type(object_type)
+    _validate_bulk_payload(data)
+
+    endpoint, _fallback = _get_endpoint_info(object_type)
+    return netbox.bulk_create(endpoint, data=data)
+
+
+@mcp.tool
+def netbox_bulk_update_objects(
+    object_type: str,
+    data: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Partially update multiple NetBox objects of the same type in one PATCH request.
+
+    Write operations are disabled by default. Start the server with ENABLE_WRITES=true
+    or --enable-writes to allow this tool to run. NetBox bulk operations are all-or-none.
+
+    Args:
+        object_type: String representing the NetBox object type (e.g. "dcim.site")
+        data: List of update objects. Each object must include a positive integer id.
+              Add changelog_message to each object where an audit message is desired.
+
+    Returns:
+        The updated objects as returned by NetBox.
+    """
+    _ensure_writes_enabled()
+    _validate_object_type(object_type)
+    _validate_bulk_update_payload(data)
+
+    endpoint, _fallback = _get_endpoint_info(object_type)
+    return netbox.bulk_update(endpoint, data=data)
+
+
+@mcp.tool
+def netbox_bulk_delete_objects(
+    object_type: str,
+    object_ids: list[int],
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """
+    Delete multiple NetBox objects of the same type in one request.
+
+    Write operations are disabled by default. Start the server with ENABLE_WRITES=true
+    or --enable-writes to allow this tool to run. This tool also requires confirm=True.
+    NetBox bulk operations are all-or-none.
+
+    Args:
+        object_type: String representing the NetBox object type (e.g. "dcim.site")
+        object_ids: Numeric NetBox object IDs to delete
+        confirm: Must be true to perform the deletion
+
+    Returns:
+        A structured bulk deletion result.
+    """
+    _ensure_writes_enabled()
+    _validate_object_type(object_type)
+    _validate_bulk_delete_ids(object_ids)
+
+    if not confirm:
+        raise ValueError("Deleting objects requires confirm=True")
+
+    endpoint, _fallback = _get_endpoint_info(object_type)
+    deleted = netbox.bulk_delete(endpoint, ids=object_ids)
+    return {
+        "deleted": deleted,
+        "object_type": object_type,
+        "object_ids": object_ids,
+        "count": len(object_ids),
+    }
 
 
 @mcp.tool
@@ -522,7 +768,7 @@ def _get_endpoint_info(object_type: str) -> tuple[str, str | None]:
 
 def main() -> None:
     """Main entry point for the MCP server."""
-    global netbox
+    global enable_writes, netbox
 
     cli_overlay: dict[str, Any] = parse_cli_args()
 
@@ -542,6 +788,13 @@ def main() -> None:
         logger.warning(
             "SSL certificate verification is DISABLED. "
             "This is insecure and should only be used for testing."
+        )
+
+    enable_writes = settings.enable_writes
+    if enable_writes:
+        logger.warning(
+            "NetBox write operations are ENABLED. Ensure the configured API token has only the "
+            "permissions required for this MCP server."
         )
 
     if settings.transport == "http" and settings.host in ["0.0.0.0", "::", "[::]"]:  # noqa: S104 - checking, not binding

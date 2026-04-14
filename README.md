@@ -7,21 +7,28 @@
 > - Docker users: rebuild images with updated CMD
 > - See [CHANGELOG.md](CHANGELOG.md) for full details
 
-This is a simple read-only [Model Context Protocol](https://modelcontextprotocol.io/) server for NetBox.  It enables you to interact with your data in NetBox directly via LLMs that support MCP.
+This is a [Model Context Protocol](https://modelcontextprotocol.io/) server for NetBox. It is read-only by default, with optional write tools for create, update, and delete operations when explicitly enabled.
 
 ## Tools
 
 | Tool | Description |
 |------|-------------|
-| get_objects | Retrieves NetBox core objects based on their type and filters |
-| get_object_by_id | Gets detailed information about a specific NetBox object by its ID |
-| get_changelogs | Retrieves change history records (audit trail) based on filters |
+| `netbox_get_objects` | Retrieves NetBox core objects based on their type and filters |
+| `netbox_get_object_by_id` | Gets detailed information about a specific NetBox object by its ID |
+| `netbox_get_changelogs` | Retrieves change history records (audit trail) based on filters |
+| `netbox_search_objects` | Searches common NetBox object types |
+| `netbox_create_object` | Creates one NetBox object (requires `ENABLE_WRITES=true`) |
+| `netbox_update_object` | Updates one NetBox object with `PATCH` (requires `ENABLE_WRITES=true`) |
+| `netbox_delete_object` | Deletes one NetBox object with `confirm=true` (requires `ENABLE_WRITES=true`) |
+| `netbox_bulk_create_objects` | Creates multiple objects of the same type (requires `ENABLE_WRITES=true`) |
+| `netbox_bulk_update_objects` | Updates multiple objects of the same type (requires `ENABLE_WRITES=true`) |
+| `netbox_bulk_delete_objects` | Deletes multiple objects of the same type with `confirm=true` (requires `ENABLE_WRITES=true`) |
 
 > Note: the set of supported object types is explicitly defined and limited to the core NetBox objects for now, and won't work with object types from plugins.
 
 ## Usage
 
-1. Create a read-only API token in NetBox with sufficient permissions for the tool to access the data you want to make available via MCP.
+1. Create an API token in NetBox with sufficient permissions for the data you want to make available via MCP. Use a read-only token unless you plan to enable write tools.
 
 2. Install dependencies:
 
@@ -151,6 +158,26 @@ devices = netbox_get_objects(
 
 The `fields` parameter uses NetBox's native field filtering. See the [NetBox API documentation](https://docs.netbox.dev/en/stable/integrations/rest-api/) for details.
 
+### Write Operations
+
+Write operations are disabled by default. To enable create, update, and delete tools, set `ENABLE_WRITES=true` or pass `--enable-writes` when starting the server. The NetBox token must also have write access in NetBox.
+
+```bash
+NETBOX_URL=https://netbox.example.com/ \
+NETBOX_TOKEN=<your-write-enabled-api-token> \
+ENABLE_WRITES=true \
+uv run netbox-mcp-server
+```
+
+Delete tools require `confirm=true` in addition to `ENABLE_WRITES=true`:
+
+```python
+netbox_delete_object("dcim.site", 123, confirm=True)
+netbox_bulk_delete_objects("dcim.site", [123, 124], confirm=True)
+```
+
+Create and update payloads are passed directly to NetBox's REST API. Related objects may be specified by numeric ID or by unique identifying attributes supported by NetBox. Add `changelog_message` to create/update payloads to record an audit message.
+
 ## Configuration
 
 The server supports multiple configuration sources with the following precedence (highest to lowest):
@@ -170,6 +197,7 @@ The server supports multiple configuration sources with the following precedence
 | `HOST` | String | `127.0.0.1` | If HTTP | Host address for HTTP server |
 | `PORT` | Integer | `8000` | If HTTP | Port for HTTP server |
 | `VERIFY_SSL` | Boolean | `true` | No | Whether to verify SSL certificates |
+| `ENABLE_WRITES` | Boolean | `false` | No | Whether to allow create, update, and delete tools |
 | `LOG_LEVEL` | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL` | `INFO` | No | Logging verbosity |
 
 ### Transport Examples
@@ -235,6 +263,9 @@ TRANSPORT=stdio
 # Security (optional, defaults to true)
 VERIFY_SSL=true
 
+# Write operations (optional, defaults to false)
+ENABLE_WRITES=false
+
 # Logging (optional, defaults to INFO)
 LOG_LEVEL=INFO
 ```
@@ -249,6 +280,7 @@ uv run netbox-mcp-server --help
 # Common examples:
 uv run netbox-mcp-server --log-level DEBUG --no-verify-ssl  # Development
 uv run netbox-mcp-server --transport http --port 9000       # Custom HTTP port
+uv run netbox-mcp-server --enable-writes                    # Enable write tools
 ```
 
 ## Docker Usage
