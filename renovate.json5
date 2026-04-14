@@ -28,8 +28,9 @@
 
     // GitHub Actions
     {
-      description: 'Group non-major GitHub Actions updates',
+      description: 'GitHub Actions - SHA-pin and group non-major updates',
       matchManagers: ['github-actions'],
+      pinDigests: true,
       matchUpdateTypes: ['minor', 'patch', 'pin', 'digest'],
       groupName: 'non-major GitHub Actions',
       minimumReleaseAge: '3 days',
